@@ -9,17 +9,21 @@ class KeyMonitorManager {
     private var runLoopSource: CFRunLoopSource?
     private weak var appState: AppState?
     private var fnKeyDown = false
+    private var retryTimer: Timer?
 
     private init() {}
 
     func start(appState: AppState) {
         self.appState = appState
-        createEventTap()
+        attemptEventTap()
     }
 
-    private func createEventTap() {
-        let mask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
+    private func attemptEventTap() {
+        // Stop any existing retry timer
+        retryTimer?.invalidate()
+        retryTimer = nil
 
+        let mask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
         guard let tap = CGEvent.tapCreate(
@@ -60,29 +64,24 @@ class KeyMonitorManager {
             },
             userInfo: userInfo
         ) else {
-            // Event tap failed — this means Accessibility permission is not granted
-            print("⚠️ Failed to create event tap. Accessibility permission not granted.")
+            // Event tap creation failed — no accessibility permission
+            print("⚠️ Event tap failed. Will retry every 2 seconds...")
 
             DispatchQueue.main.async { [weak self] in
-                self?.appState?.statusMessage = "No Accessibility Access"
-                self?.appState?.errorMessage = "Grant Accessibility permission and restart."
+                self?.appState?.statusMessage = "Waiting for Accessibility..."
+                self?.appState?.errorMessage = "Grant Accessibility permission in System Settings. Whispr will detect it automatically."
+            }
 
-                let alert = NSAlert()
-                alert.messageText = "Accessibility Permission Required"
-                alert.informativeText = "Whispr needs Accessibility access to detect the fn key.\n\nGo to System Settings → Privacy & Security → Accessibility and enable Whispr, then restart the app."
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "Open System Settings")
-                alert.addButton(withTitle: "OK")
-
-                if alert.runModal() == .alertFirstButtonReturn {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                        NSWorkspace.shared.open(url)
-                    }
+            // Retry every 2 seconds until permission is granted
+            DispatchQueue.main.async { [weak self] in
+                self?.retryTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                    self?.attemptEventTap()
                 }
             }
             return
         }
 
+        // Success!
         self.eventTap = tap
 
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -91,10 +90,18 @@ class KeyMonitorManager {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
-        print("✅ Event tap created successfully. Listening for fn key...")
+        print("✅ Event tap created. Listening for fn key...")
+
+        DispatchQueue.main.async { [weak self] in
+            self?.appState?.statusMessage = "Ready"
+            self?.appState?.errorMessage = nil
+        }
     }
 
     func stop() {
+        retryTimer?.invalidate()
+        retryTimer = nil
+
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
         }

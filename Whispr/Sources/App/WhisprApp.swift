@@ -1,18 +1,5 @@
+import AppKit
 import SwiftUI
-import Combine
-
-@main
-struct WhisprApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        // Menu bar only app — no main window
-        // Settings are opened via NSWindow in AppDelegate
-        Settings {
-            EmptyView()
-        }
-    }
-}
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarController: StatusBarController?
@@ -20,7 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Hide dock icon — menu bar only
+        // Menu bar only — no dock icon
         NSApp.setActivationPolicy(.accessory)
 
         // Initialize menu bar
@@ -29,7 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Ensure support directory exists
         ExamplesStore.shared.ensureDirectoryExists()
 
-        // Start key monitor
+        // Start key monitor (will retry if permission not yet granted)
         KeyMonitorManager.shared.start(appState: appState)
     }
 
@@ -54,26 +41,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.setContentSize(NSSize(width: 550, height: 500))
         window.center()
         window.isReleasedWhenClosed = false
-        window.level = .floating
 
         self.settingsWindow = window
 
-        // Temporarily become a regular app so the window actually shows
+        // Temporarily show dock icon so the window can come to front
         NSApp.setActivationPolicy(.regular)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        // When the window closes, go back to accessory (menu bar only)
+        // When window closes, hide dock icon again
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
-        ) { [weak self] _ in
-            // Small delay to let the close animation finish
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if self?.settingsWindow?.isVisible != true {
-                    NSApp.setActivationPolicy(.accessory)
-                }
+        ) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                NSApp.setActivationPolicy(.accessory)
             }
         }
     }
