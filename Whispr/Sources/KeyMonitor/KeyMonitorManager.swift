@@ -1,4 +1,3 @@
-import CoreGraphics
 import AppKit
 import Carbon
 import Foundation
@@ -6,33 +5,23 @@ import Foundation
 class KeyMonitorManager {
     static let shared = KeyMonitorManager()
 
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
     private weak var appState: AppState?
-    private var retryTimer: Timer?
     private var globalMonitor: Any?
+    private var localMonitor: Any?
+    private var hotKeyRef: EventHotKeyRef?
 
     private init() {}
 
     func start(appState: AppState) {
         self.appState = appState
-        setupGlobalHotkey()
-    }
 
-    private func setupGlobalHotkey() {
-        // Use NSEvent global monitor for key combos — more reliable than CGEventTap
-        // for modifier+key combinations on modern macOS
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleKeyEvent(event)
-        }
+        // Method 1: Carbon global hotkey (most reliable)
+        registerCarbonHotkey()
 
-        // Also monitor locally (when our own windows are focused)
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleKeyEvent(event)
-            return event
-        }
+        // Method 2: NSEvent monitors as fallback
+        setupNSEventMonitors()
 
-        print("✅ Global hotkey monitor active. Press fn+Space or ⌥Space to toggle recording...")
+        print("✅ Hotkey registered. Press ⌥Space to toggle recording.")
 
         DispatchQueue.main.async { [weak self] in
             self?.appState?.statusMessage = "Ready — ⌥Space to record"
@@ -40,30 +29,67 @@ class KeyMonitorManager {
         }
     }
 
-    private func handleKeyEvent(_ event: NSEvent) {
-        let keyCode = event.keyCode
+    // MARK: - Carbon Global Hotkey (most reliable approach)
 
+    private func registerCarbonHotkey() {
+        // Register a Carbon event handler for hotkeys
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+
+        let handler: EventHandlerUPP = { _, event, _ -> OSStatus in
+            DispatchQueue.main.async {
+                KeyMonitorManager.shared.toggleRecording()
+            }
+            return noErr
+        }
+
+        var handlerRef: EventHandlerRef?
+        InstallEventHandler(GetApplicationEventTarget(), handler, 1, &eventType, nil, &handlerRef)
+
+        // Register ⌥Space (Option + Space)
+        // Space = keyCode 49, Option = optionKey
+        var hotKeyID = EventHotKeyID(signature: OSType(0x57535052), id: 1) // "WSPR"
+        let modifiers: UInt32 = UInt32(optionKey)
+        let keyCode: UInt32 = 49 // Space
+
+        var hotKey: EventHotKeyRef?
+        let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKey)
+
+        if status == noErr {
+            self.hotKeyRef = hotKey
+            print("✅ Carbon hotkey registered: ⌥Space")
+        } else {
+            print("⚠️ Carbon hotkey registration failed: \(status)")
+        }
+    }
+
+    // MARK: - NSEvent Monitors (fallback)
+
+    private func setupNSEventMonitors() {
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKeyEvent(event)
+        }
+
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKeyEvent(event)
+            return event
+        }
+    }
+
+    private func handleKeyEvent(_ event: NSEvent) {
         // Space = keyCode 49
-        guard keyCode == 49 else { return }
+        guard event.keyCode == 49 else { return }
 
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-        // Option+Space (⌥Space)
-        if flags.contains(.option) {
+        // ⌥Space
+        if flags == .option {
             DispatchQueue.main.async { [weak self] in
                 self?.toggleRecording()
             }
-            return
-        }
-
-        // Also support fn+Space (if the system passes it through)
-        if flags.contains(.function) {
-            DispatchQueue.main.async { [weak self] in
-                self?.toggleRecording()
-            }
-            return
         }
     }
+
+    // MARK: - Toggle
 
     private func toggleRecording() {
         guard let appState = appState else { return }
@@ -75,22 +101,20 @@ class KeyMonitorManager {
         }
     }
 
-    func stop() {
-        retryTimer?.invalidate()
-        retryTimer = nil
+    // MARK: - Cleanup
 
+    func stop() {
         if let monitor = globalMonitor {
             NSEvent.removeMonitor(monitor)
             globalMonitor = nil
         }
-
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
         }
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
+        if let hotKey = hotKeyRef {
+            UnregisterEventHotKey(hotKey)
+            hotKeyRef = nil
         }
-        eventTap = nil
-        runLoopSource = nil
     }
 }
