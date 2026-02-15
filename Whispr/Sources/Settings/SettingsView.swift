@@ -29,7 +29,6 @@ struct SettingsView: View {
                     Label("Examples", systemImage: "list.bullet.rectangle")
                 }
         }
-        .frame(width: 550, height: 450)
         .padding()
     }
 }

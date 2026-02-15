@@ -104,13 +104,8 @@ class StatusBarController {
     }
 
     @objc private func openSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        // macOS 14+ renamed showPreferencesWindow to showSettingsWindow
-        if #available(macOS 14.0, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
+        guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
+        appDelegate.openSettings()
     }
 
     @objc private func quit() {
