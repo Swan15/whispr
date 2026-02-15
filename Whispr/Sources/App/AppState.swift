@@ -190,7 +190,7 @@ class AppState: ObservableObject {
 
                     // Auto-paste if enabled
                     if self.autoPasteEnabled {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             ClipboardPaster.simulatePaste()
                         }
                     }
@@ -204,7 +204,7 @@ class AppState: ObservableObject {
                     self.lastFormatted = text
                     ClipboardPaster.copyToClipboard(text)
                     if self.autoPasteEnabled {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             ClipboardPaster.simulatePaste()
                         }
                     }
