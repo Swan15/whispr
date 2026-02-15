@@ -51,93 +51,41 @@ class AppState: ObservableObject {
         NSSound(named: "Basso")?.play()
     }
 
-    // MARK: - Permission Checks
-
-    /// Check whether the app has been granted Accessibility permission
-    static func checkAccessibilityPermission() -> Bool {
-        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
-        return AXIsProcessTrustedWithOptions(options)
-    }
-
-    /// Prompt the user to grant Accessibility permission (shows system dialog)
-    static func requestAccessibilityPermission() {
-        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        _ = AXIsProcessTrustedWithOptions(options)
-    }
-
-    /// Check microphone authorization status
-    func checkMicrophonePermission(completion: @escaping (Bool) -> Void) {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized:
-            completion(true)
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
-                completion(granted)
-            }
-        case .denied, .restricted:
-            completion(false)
-        @unknown default:
-            completion(false)
-        }
-    }
-
-    /// Show an alert guiding the user to grant a missing permission
-    private func showPermissionAlert(title: String, message: String) {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = title
-            alert.informativeText = message
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Open System Settings")
-            alert.addButton(withTitle: "Cancel")
-
-            NSApp.activate(ignoringOtherApps: true)
-
-            if alert.runModal() == .alertFirstButtonReturn {
-                // Open the Privacy & Security pane
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-        }
-    }
-
     // MARK: - Recording
 
     func startRecording() {
         guard !isRecording else { return }
 
-        // Check microphone permission first
-        checkMicrophonePermission { [weak self] granted in
-            guard let self = self else { return }
-            guard granted else {
+        isRecording = true
+        statusMessage = "Recording..."
+        errorMessage = nil
+        recordingStartTime = Date()
+        playStartSound()
+
+        do {
+            try audioRecorder.startRecording()
+        } catch {
+            isRecording = false
+            recordingStartTime = nil
+            statusMessage = "Error"
+            errorMessage = "Failed to start recording: \(error.localizedDescription)"
+            playErrorSound()
+
+            // If it looks like a permission issue, guide the user
+            if error.localizedDescription.contains("permission") || error.localizedDescription.contains("denied") {
                 DispatchQueue.main.async {
-                    self.statusMessage = "Mic Permission Denied"
-                    self.errorMessage = "Microphone access is required. Please grant it in System Settings."
-                    self.showPermissionAlert(
-                        title: "Microphone Access Required",
-                        message: "Whispr needs microphone access to record your speech.\n\nGo to System Settings → Privacy & Security → Microphone and enable Whispr."
-                    )
-                    self.playErrorSound()
-                }
-                return
-            }
+                    let alert = NSAlert()
+                    alert.messageText = "Microphone Access Required"
+                    alert.informativeText = "Whispr needs microphone access to record speech.\n\nGo to System Settings → Privacy & Security → Microphone and enable Whispr."
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "Open System Settings")
+                    alert.addButton(withTitle: "OK")
 
-            DispatchQueue.main.async {
-                self.isRecording = true
-                self.statusMessage = "Recording..."
-                self.errorMessage = nil
-                self.recordingStartTime = Date()
-                self.playStartSound()
-
-                do {
-                    try self.audioRecorder.startRecording()
-                } catch {
-                    self.isRecording = false
-                    self.recordingStartTime = nil
-                    self.statusMessage = "Error"
-                    self.errorMessage = "Failed to start recording: \(error.localizedDescription)"
-                    self.playErrorSound()
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
                 }
             }
         }
@@ -151,9 +99,8 @@ class AppState: ObservableObject {
         if let startTime = recordingStartTime {
             let duration = Date().timeIntervalSince(startTime)
             if duration < minimumRecordingDuration {
-                // Too short — probably accidental, discard
+                // Too short — probably accidental, discard silently
                 audioRecorder.stopRecording { url in
-                    // Clean up the file
                     if let url = url {
                         try? FileManager.default.removeItem(at: url)
                     }
@@ -188,7 +135,7 @@ class AppState: ObservableObject {
         guard !openAIAPIKey.isEmpty else {
             DispatchQueue.main.async {
                 self.isProcessing = false
-                self.statusMessage = "Error"
+                self.statusMessage = "No API Key"
                 self.errorMessage = "OpenAI API key not set. Open Settings to configure."
                 self.playErrorSound()
             }

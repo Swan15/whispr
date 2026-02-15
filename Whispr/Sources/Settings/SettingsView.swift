@@ -1,5 +1,4 @@
 import SwiftUI
-import AVFoundation
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -37,8 +36,6 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
-    @State private var accessibilityGranted = false
-    @State private var microphoneGranted = false
 
     var body: some View {
         Form {
@@ -47,43 +44,6 @@ struct GeneralSettingsView: View {
                     .help("Automatically pastes formatted text into the focused input field")
             } header: {
                 Text("Behavior")
-            }
-
-            Section {
-                HStack {
-                    Image(systemName: accessibilityGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundColor(accessibilityGranted ? .green : .red)
-                    Text("Accessibility")
-                    Spacer()
-                    Text(accessibilityGranted ? "Granted" : "Not Granted")
-                        .foregroundColor(.secondary)
-                }
-
-                HStack {
-                    Image(systemName: microphoneGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundColor(microphoneGranted ? .green : .red)
-                    Text("Microphone")
-                    Spacer()
-                    Text(microphoneGranted ? "Granted" : "Not Granted")
-                        .foregroundColor(.secondary)
-                }
-
-                HStack {
-                    Button("Check Permissions") {
-                        refreshPermissions()
-                    }
-
-                    Spacer()
-
-                    Button("Open System Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(.link)
-                }
-            } header: {
-                Text("Permissions")
             }
 
             Section {
@@ -110,15 +70,6 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear {
-            refreshPermissions()
-        }
-    }
-
-    private func refreshPermissions() {
-        accessibilityGranted = AppState.checkAccessibilityPermission()
-        let status = AVCaptureDevice.authorizationStatus(for: .audio)
-        microphoneGranted = (status == .authorized)
     }
 }
 
@@ -214,7 +165,6 @@ struct ExamplesSettingsView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // Add new example
             GroupBox("Add Correction Example") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Input (raw transcription):")
@@ -239,7 +189,6 @@ struct ExamplesSettingsView: View {
                 .padding(8)
             }
 
-            // Existing examples
             GroupBox("Saved Examples (\(examples.count))") {
                 if examples.isEmpty {
                     Text("No examples yet. Add corrections to teach the formatter your preferences.")

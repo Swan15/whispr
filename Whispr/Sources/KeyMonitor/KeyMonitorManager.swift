@@ -14,45 +14,12 @@ class KeyMonitorManager {
 
     func start(appState: AppState) {
         self.appState = appState
-
-        // Check accessibility permission before trying to create the event tap
-        if !AppState.checkAccessibilityPermission() {
-            print("⚠️ Accessibility permission not granted. Requesting...")
-            AppState.requestAccessibilityPermission()
-
-            // Show a user-facing alert
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "Accessibility Permission Required"
-                alert.informativeText = """
-                Whispr needs Accessibility access to detect the fn key and simulate paste.
-
-                Please go to System Settings → Privacy & Security → Accessibility and enable Whispr.
-
-                After granting permission, restart the app.
-                """
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "Open System Settings")
-                alert.addButton(withTitle: "OK")
-
-                NSApp.activate(ignoringOtherApps: true)
-
-                if alert.runModal() == .alertFirstButtonReturn {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-            }
-            return
-        }
-
         createEventTap()
     }
 
     private func createEventTap() {
         let mask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
 
-        // Store self pointer for callback
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
         guard let tap = CGEvent.tapCreate(
@@ -68,7 +35,6 @@ class KeyMonitorManager {
                 let monitor = Unmanaged<KeyMonitorManager>.fromOpaque(refcon).takeUnretainedValue()
 
                 if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                    // Re-enable the tap
                     if let tap = monitor.eventTap {
                         CGEvent.tapEnable(tap: tap, enable: true)
                     }
@@ -79,13 +45,11 @@ class KeyMonitorManager {
                 let fnPressed = flags.contains(.maskSecondaryFn)
 
                 if fnPressed && !monitor.fnKeyDown {
-                    // fn key pressed
                     monitor.fnKeyDown = true
                     DispatchQueue.main.async {
                         monitor.appState?.startRecording()
                     }
                 } else if !fnPressed && monitor.fnKeyDown {
-                    // fn key released
                     monitor.fnKeyDown = false
                     DispatchQueue.main.async {
                         monitor.appState?.stopRecordingAndProcess()
@@ -96,12 +60,25 @@ class KeyMonitorManager {
             },
             userInfo: userInfo
         ) else {
-            print("⚠️ Failed to create event tap. Accessibility permissions may not be granted.")
-            print("   Go to System Settings > Privacy & Security > Accessibility and add Whispr.")
+            // Event tap failed — this means Accessibility permission is not granted
+            print("⚠️ Failed to create event tap. Accessibility permission not granted.")
 
             DispatchQueue.main.async { [weak self] in
                 self?.appState?.statusMessage = "No Accessibility Access"
-                self?.appState?.errorMessage = "Failed to create event tap. Grant Accessibility permission and restart."
+                self?.appState?.errorMessage = "Grant Accessibility permission and restart."
+
+                let alert = NSAlert()
+                alert.messageText = "Accessibility Permission Required"
+                alert.informativeText = "Whispr needs Accessibility access to detect the fn key.\n\nGo to System Settings → Privacy & Security → Accessibility and enable Whispr, then restart the app."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Open System Settings")
+                alert.addButton(withTitle: "OK")
+
+                if alert.runModal() == .alertFirstButtonReturn {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
             }
             return
         }
