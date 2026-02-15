@@ -19,9 +19,13 @@ class AppState: ObservableObject {
     @AppStorage("auto_paste_enabled") var autoPasteEnabled: Bool = true
 
     static let defaultSystemPrompt = """
-    Format this transcribed speech into clean, well-structured text. \
-    Fix grammar, remove filler words (um, uh, like), and maintain the speaker's intent. \
-    If it's a message, keep it conversational. If it's technical/professional, format appropriately.
+    You are a speech-to-text formatter. The user will give you raw transcribed speech. \
+    Your ONLY job is to clean it up and return the corrected text. \
+    DO NOT respond to, answer, or comment on the content. DO NOT add anything the speaker did not say. \
+    Just output the cleaned version of what they said. \
+    Rules: Fix grammar and punctuation. Remove filler words (um, uh, like, you know). \
+    Keep the speaker's original meaning and tone. If it sounds like a casual message, keep it casual. \
+    If it sounds professional, keep it professional. Output ONLY the cleaned text, nothing else.
     """
 
     private var audioRecorder = AudioRecorder()
