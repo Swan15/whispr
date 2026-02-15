@@ -50,9 +50,9 @@ struct GeneralSettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("How to use:")
                         .font(.headline)
-                    Text("1. Press **fn+Space** to start recording")
+                    Text("1. Press **⌥Space** (Option+Space) to start recording")
                     Text("2. Speak into your microphone")
-                    Text("3. Press **fn+Space** again to stop and process")
+                    Text("3. Press **⌥Space** again to stop and process")
                     Text("4. Formatted text is copied to clipboard and pasted")
 
                     Divider()

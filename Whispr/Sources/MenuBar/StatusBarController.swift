@@ -14,29 +14,23 @@ class StatusBarController {
         setupButton()
         setupMenu()
 
-        // Observe recording state changes
         appState.$isRecording
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isRecording in
-                self?.updateIcon(isRecording: isRecording)
+                self?.updateIcon()
             }
             .store(in: &cancellables)
 
         appState.$isProcessing
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] isProcessing in
-                if isProcessing {
-                    self?.updateIconProcessing()
-                }
+            .sink { [weak self] _ in
+                self?.updateIcon()
             }
             .store(in: &cancellables)
     }
 
     private func setupButton() {
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Whispr")
-            button.image?.isTemplate = true
-        }
+        updateIcon()
     }
 
     private func setupMenu() {
@@ -66,7 +60,6 @@ class StatusBarController {
 
         statusItem.menu = menu
 
-        // Update menu items when state changes
         appState.$statusMessage
             .receive(on: DispatchQueue.main)
             .sink { [weak statusMenuItem] message in
@@ -83,23 +76,27 @@ class StatusBarController {
             .store(in: &cancellables)
     }
 
-    private func updateIcon(isRecording: Bool) {
-        if let button = statusItem.button {
-            if isRecording {
-                button.image = NSImage(systemSymbolName: "mic.circle.fill", accessibilityDescription: "Recording")
-                button.contentTintColor = .systemRed
-            } else {
-                button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Whispr")
-                button.contentTintColor = nil
-                button.image?.isTemplate = true
-            }
-        }
-    }
+    private func updateIcon() {
+        guard let button = statusItem.button else { return }
 
-    private func updateIconProcessing() {
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "ellipsis.circle.fill", accessibilityDescription: "Processing")
+        if appState.isRecording {
+            // Recording — red tinted mic
+            let image = NSImage(systemSymbolName: "mic.circle.fill", accessibilityDescription: "Recording")
+            image?.isTemplate = false
+            button.image = image
+            button.contentTintColor = .systemRed
+        } else if appState.isProcessing {
+            // Processing — orange tinted
+            let image = NSImage(systemSymbolName: "ellipsis.circle.fill", accessibilityDescription: "Processing")
+            image?.isTemplate = false
+            button.image = image
             button.contentTintColor = .systemOrange
+        } else {
+            // Idle — normal template icon
+            let image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Whispr")
+            image?.isTemplate = true
+            button.image = image
+            button.contentTintColor = nil
         }
     }
 

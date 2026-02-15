@@ -1,13 +1,13 @@
 # Whispr 🎙️
 
-A native macOS menu bar app that turns your speech into clean, formatted text. Press **fn+Space** to start recording, press again to stop — transcribed and formatted text is automatically pasted into whatever you're typing in.
+A native macOS menu bar app that turns your speech into clean, formatted text. Press **⌥Space** (Option+Space) to start recording, press again to stop — transcribed and formatted text is automatically pasted into whatever you're typing in.
 
 Think [Wispr Flow](https://wispr.com), but open source and DIY.
 
 ## How It Works
 
-1. **Press fn+Space** → starts recording from your microphone
-2. **Press fn+Space again** → stops recording, sends audio to OpenAI Whisper for transcription
+1. **Press ⌥Space** (Option+Space) → starts recording from your microphone
+2. **Press ⌥Space again** → stops recording, sends audio to OpenAI Whisper for transcription
 3. **AI formatting** → raw transcript is cleaned up by GPT-4o-mini or Claude (your choice)
 4. **Auto-paste** → formatted text is copied to clipboard and pasted into the focused input field
 
@@ -84,9 +84,9 @@ On first launch, you'll need to grant two permissions:
 
 ### 3. Start Dictating!
 
-- Press **fn+Space** → mic icon turns red (recording)
+- Press **⌥Space** (Option+Space) → mic icon turns red (recording)
 - Speak your text
-- Press **fn+Space** again → icon turns orange (processing) → text is pasted
+- Press **⌥Space** again → icon turns orange (processing) → text is pasted
 
 ## Configuration
 

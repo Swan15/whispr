@@ -1,5 +1,6 @@
 import CoreGraphics
 import AppKit
+import Carbon
 import Foundation
 
 class KeyMonitorManager {
@@ -9,86 +10,58 @@ class KeyMonitorManager {
     private var runLoopSource: CFRunLoopSource?
     private weak var appState: AppState?
     private var retryTimer: Timer?
+    private var globalMonitor: Any?
 
     private init() {}
 
     func start(appState: AppState) {
         self.appState = appState
-        attemptEventTap()
+        setupGlobalHotkey()
     }
 
-    private func attemptEventTap() {
-        retryTimer?.invalidate()
-        retryTimer = nil
+    private func setupGlobalHotkey() {
+        // Use NSEvent global monitor for key combos — more reliable than CGEventTap
+        // for modifier+key combinations on modern macOS
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKeyEvent(event)
+        }
 
-        // Listen for both flagsChanged (fn) and keyDown (space)
-        let mask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
-        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+        // Also monitor locally (when our own windows are focused)
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKeyEvent(event)
+            return event
+        }
 
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: { proxy, type, event, refcon -> Unmanaged<CGEvent>? in
-                guard let refcon = refcon else {
-                    return Unmanaged.passRetained(event)
-                }
+        print("✅ Global hotkey monitor active. Press fn+Space or ⌥Space to toggle recording...")
 
-                let monitor = Unmanaged<KeyMonitorManager>.fromOpaque(refcon).takeUnretainedValue()
+        DispatchQueue.main.async { [weak self] in
+            self?.appState?.statusMessage = "Ready — ⌥Space to record"
+            self?.appState?.errorMessage = nil
+        }
+    }
 
-                if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                    if let tap = monitor.eventTap {
-                        CGEvent.tapEnable(tap: tap, enable: true)
-                    }
-                    return Unmanaged.passRetained(event)
-                }
+    private func handleKeyEvent(_ event: NSEvent) {
+        let keyCode = event.keyCode
 
-                // Check for fn + Space combo
-                if type == .keyDown {
-                    let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-                    let flags = event.flags
+        // Space = keyCode 49
+        guard keyCode == 49 else { return }
 
-                    // keyCode 49 = Space, check if fn is held
-                    if keyCode == 49 && flags.contains(.maskSecondaryFn) {
-                        DispatchQueue.main.async {
-                            monitor.toggleRecording()
-                        }
-                    }
-                }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-                return Unmanaged.passRetained(event)
-            },
-            userInfo: userInfo
-        ) else {
-            print("⚠️ Event tap failed. Will retry every 2 seconds...")
-
+        // Option+Space (⌥Space)
+        if flags.contains(.option) {
             DispatchQueue.main.async { [weak self] in
-                self?.appState?.statusMessage = "Waiting for Accessibility..."
-                self?.appState?.errorMessage = "Grant Accessibility permission in System Settings."
-            }
-
-            DispatchQueue.main.async { [weak self] in
-                self?.retryTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-                    self?.attemptEventTap()
-                }
+                self?.toggleRecording()
             }
             return
         }
 
-        self.eventTap = tap
-
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        self.runLoopSource = source
-
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-
-        print("✅ Event tap created. Listening for fn+Space...")
-
-        DispatchQueue.main.async { [weak self] in
-            self?.appState?.statusMessage = "Ready — fn+Space to record"
-            self?.appState?.errorMessage = nil
+        // Also support fn+Space (if the system passes it through)
+        if flags.contains(.function) {
+            DispatchQueue.main.async { [weak self] in
+                self?.toggleRecording()
+            }
+            return
         }
     }
 
@@ -105,6 +78,11 @@ class KeyMonitorManager {
     func stop() {
         retryTimer?.invalidate()
         retryTimer = nil
+
+        if let monitor = globalMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMonitor = nil
+        }
 
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
