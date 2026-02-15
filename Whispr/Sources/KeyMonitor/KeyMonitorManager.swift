@@ -8,7 +8,6 @@ class KeyMonitorManager {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private weak var appState: AppState?
-    private var fnKeyDown = false
     private var retryTimer: Timer?
 
     private init() {}
@@ -19,11 +18,11 @@ class KeyMonitorManager {
     }
 
     private func attemptEventTap() {
-        // Stop any existing retry timer
         retryTimer?.invalidate()
         retryTimer = nil
 
-        let mask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
+        // Listen for both flagsChanged (fn) and keyDown (space)
+        let mask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
         guard let tap = CGEvent.tapCreate(
@@ -45,18 +44,16 @@ class KeyMonitorManager {
                     return Unmanaged.passRetained(event)
                 }
 
-                let flags = event.flags
-                let fnPressed = flags.contains(.maskSecondaryFn)
+                // Check for fn + Space combo
+                if type == .keyDown {
+                    let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+                    let flags = event.flags
 
-                if fnPressed && !monitor.fnKeyDown {
-                    monitor.fnKeyDown = true
-                    DispatchQueue.main.async {
-                        monitor.appState?.startRecording()
-                    }
-                } else if !fnPressed && monitor.fnKeyDown {
-                    monitor.fnKeyDown = false
-                    DispatchQueue.main.async {
-                        monitor.appState?.stopRecordingAndProcess()
+                    // keyCode 49 = Space, check if fn is held
+                    if keyCode == 49 && flags.contains(.maskSecondaryFn) {
+                        DispatchQueue.main.async {
+                            monitor.toggleRecording()
+                        }
                     }
                 }
 
@@ -64,15 +61,13 @@ class KeyMonitorManager {
             },
             userInfo: userInfo
         ) else {
-            // Event tap creation failed — no accessibility permission
             print("⚠️ Event tap failed. Will retry every 2 seconds...")
 
             DispatchQueue.main.async { [weak self] in
                 self?.appState?.statusMessage = "Waiting for Accessibility..."
-                self?.appState?.errorMessage = "Grant Accessibility permission in System Settings. Whispr will detect it automatically."
+                self?.appState?.errorMessage = "Grant Accessibility permission in System Settings."
             }
 
-            // Retry every 2 seconds until permission is granted
             DispatchQueue.main.async { [weak self] in
                 self?.retryTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
                     self?.attemptEventTap()
@@ -81,7 +76,6 @@ class KeyMonitorManager {
             return
         }
 
-        // Success!
         self.eventTap = tap
 
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -90,11 +84,21 @@ class KeyMonitorManager {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
 
-        print("✅ Event tap created. Listening for fn key...")
+        print("✅ Event tap created. Listening for fn+Space...")
 
         DispatchQueue.main.async { [weak self] in
-            self?.appState?.statusMessage = "Ready"
+            self?.appState?.statusMessage = "Ready — fn+Space to record"
             self?.appState?.errorMessage = nil
+        }
+    }
+
+    private func toggleRecording() {
+        guard let appState = appState else { return }
+
+        if appState.isRecording {
+            appState.stopRecordingAndProcess()
+        } else if !appState.isProcessing {
+            appState.startRecording()
         }
     }
 

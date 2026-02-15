@@ -98,22 +98,6 @@ class AppState: ObservableObject {
     func stopRecordingAndProcess() {
         guard isRecording else { return }
         isRecording = false
-
-        // Check minimum recording duration
-        if let startTime = recordingStartTime {
-            let duration = Date().timeIntervalSince(startTime)
-            if duration < minimumRecordingDuration {
-                // Too short — probably accidental, discard silently
-                audioRecorder.stopRecording { url in
-                    if let url = url {
-                        try? FileManager.default.removeItem(at: url)
-                    }
-                }
-                recordingStartTime = nil
-                statusMessage = "Ready"
-                return
-            }
-        }
         recordingStartTime = nil
 
         playStopSound()
